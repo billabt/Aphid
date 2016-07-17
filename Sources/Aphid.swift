@@ -16,26 +16,28 @@
 
 import Foundation
 import Socket
+import Dispatch
 
 public struct Token {
 
 }
-public struct ConnectionStatus: Equatable {
-
-}
+//public struct ConnectionStatus: Equatable {
+//
+//}
 public enum connectionStatus: Int {
     case connected = 1
     case disconnected = -1
     case connecting = 0
 }
-public func ==(lhs: ConnectionStatus, rhs: ConnectionStatus) -> Bool {
-    return true
-}
+
+//public func ==(lhs: ConnectionStatus, rhs: ConnectionStatus) -> Bool {
+//    return true
+//}
 
 typealias Byte = UInt8
 
-let disconnected = ConnectionStatus()
-let connected = ConnectionStatus()
+//let disconnected = ConnectionStatus()
+//let connected = ConnectionStatus()
 
 // Aphid
 public class Aphid {
@@ -54,10 +56,13 @@ public class Aphid {
 
     var delegate: MQTTDelegate?
     
-    var buffer: [Byte] = []
+    var buffer: [Byte] = [Byte](repeating: 0x00, count: 20)
+    
 
     var status = connectionStatus.disconnected
     var config: Config
+    
+    let readQueue: DispatchQueue
 
     var isConnected: Bool {
         get {
@@ -80,6 +85,8 @@ public class Aphid {
         self.username = username
         self.password = password
         self.cleanSess = cleanSess
+        
+        readQueue = DispatchQueue(label: "read queue", attributes: .concurrent)
     }
 
     public func loop() {
@@ -88,26 +95,55 @@ public class Aphid {
             NSLog("Failure Socket has not initialized: Call .connect()")
             return
         }
-
-        DispatchQueue.global(attributes: DispatchQueue.GlobalAttributes.qosUtility).async {
-            repeat {
-            
-                do {
-                    let ready = try Socket.wait(for: [self.socket!], timeout: 1)
-
-                    if ready != nil {
-                        let _ = self.readSocket(self.socket!)
-                    }
-                    if self.buffer.count > 0 {
-                        let _ = self.parseBuffer()
-                    }
-                } catch {
-                    NSLog("Failure on Socket.wait")
-
-                }
-
-            } while true
+        
+        guard let socket = socket else {
+            fatalError()
         }
+
+        let iochannel = DispatchIO(type: DispatchIO.StreamType.stream, fileDescriptor: socket.socketfd, queue: readQueue, cleanupHandler: {
+            error in
+            
+            print("Cleaning up")
+        })
+        
+        iochannel.read(offset: off_t(0), length: 10, queue: readQueue) {
+            done, data, error in
+            
+            if data != nil {
+                print ("Received data")
+                
+                data?.copyBytes(to: &self.buffer, count: data!.count)
+                let packet = self.parseBuffer()
+                
+            }
+            
+            print(done)
+        }
+        
+        //iochannel.setInterval(interval: DispatchTimeInterval.seconds(1))
+     
+        
+     
+        
+//        DispatchQueue.global(attributes: DispatchQueue.GlobalAttributes.qosUtility).async {
+//            repeat {
+//            
+//                do {
+//                    let ready = try Socket.wait(for: [self.socket!], timeout: 1)
+//
+//                    if ready != nil {
+//                        let _ = self.readSocket(self.socket!)
+//                    }
+//                    if self.buffer.count > 0 {
+//                        let _ = self.parseBuffer()
+//                    }
+//                } catch {
+//                    NSLog("Failure on Socket.wait")
+//
+//                }
+//
+//            } while true
+//        }
     }
     // Initial Connect
     public func connect() throws -> Bool {
@@ -132,35 +168,35 @@ public class Aphid {
             NSLog("Connection could not be made")
         }
         
-        startTimer()
+        // startTimer()
         
         status = .connected
 
         return true
     }
 
-    func readSocket(_ reader: SocketReader) -> Int? {
-
-        do {
-            let tmpBuffer = NSMutableData(capacity: 128)
-
-            let length = try reader.read(into: tmpBuffer!)
-            
-            var bytes = [UInt8](repeating: 0, count: (tmpBuffer?.length)!)
-            
-            tmpBuffer?.getBytes(&bytes, length:(tmpBuffer?.length)! * sizeof(UInt8.self))
-            
-            buffer.append(contentsOf: bytes)
-            
-            return length
-
-        } catch {
-            NSLog("Could not read from socket")
-            
-        }
-
-        return nil
-    }
+//    func readSocket(_ reader: SocketReader) -> Int? {
+//
+//        do {
+//            let tmpBuffer = NSMutableData(capacity: 128)
+//
+//            let length = try reader.read(into: tmpBuffer!)
+//            
+//            var bytes = [UInt8](repeating: 0, count: (tmpBuffer?.length)!)
+//            
+//            tmpBuffer?.getBytes(&bytes, length:(tmpBuffer?.length)! * sizeof(UInt8.self))
+//            
+//            buffer.append(contentsOf: bytes)
+//            
+//            return length
+//
+//        } catch {
+//            NSLog("Could not read from socket")
+//            
+//        }
+//
+//        return nil
+//    }
 
     func parseBuffer() -> ControlPacket {
 
@@ -322,14 +358,15 @@ public class Aphid {
         }
 
     }
-    func startTimer(){
-        print("start Timer")
-        keepAliveTimer = Timer(timeInterval: 0.2, target: self, selector: #selector(Aphid.pingT(timer:)), userInfo: "timer", repeats: true)
-        RunLoop.current().add(keepAliveTimer, forMode: RunLoopMode.commonModes)
-    }
+//    func startTimer(){
+//        print("start Timer")
+//        keepAliveTimer = Timer(timeInterval: 0.2, target: self, selector: #selector(Aphid.pingT(timer:)), userInfo: "timer", repeats: true)
+//        RunLoop.current().add(keepAliveTimer, forMode: RunLoopMode.commonModes)
+//    }
+    
     func resetTimer() {
-        keepAliveTimer.invalidate()
-        startTimer()
+//        keepAliveTimer.invalidate()
+//        startTimer()
     }
 
     @objc(pingT:)
