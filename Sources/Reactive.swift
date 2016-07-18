@@ -44,22 +44,44 @@ class Future<T>  {
     var successCallback: ((T) -> Void)? = nil
     var errorCallback: ((ErrorProtocol) -> Void)? = nil
     
-    let group: DispatchGroup = DispatchGroup()
+    var f: ((T, (Result<T>)->Void) -> Void)? = nil
+    
+    var next: Future? = nil
     
 }
 
 extension Future {
     
-    func onSuccess(_ callback: ((T)->Void)) -> Future {
-        let future = Future()
+    func onSuccess(_ callback: ((T)->Void)) {
         self.successCallback = callback
+    }
+    
+    func onError(_ callback: ((ErrorProtocol)->Void)) {
+        self.errorCallback = callback
+    }
+    
+    func then(f: (T, (Result<T>)->Void) -> Void) -> Future {
+        let future = Future()
+        self.next = future
         return future
     }
     
-    func onError(_ callback: ((ErrorProtocol)->Void)) -> Future {
-        let future = Future()
-        self.errorCallback = callback
-        return future
+    func process(_ value: T) {
+        queue.async() {
+            self.f?(value) {
+                self.resolve($0)
+            }
+        }
+    }
+    
+    func notify( _ result: Result<T> ) {
+        
+        switch result {
+            case .success(let value):
+                process(value)
+            case .failure:
+                self.resolve(result)
+        }
     }
     
     func resolve( _ result: Result<T> ) {
@@ -69,46 +91,28 @@ extension Future {
             self.successCallback?( value )
         case .failure(let error):
             self.errorCallback?(error)
-        
         }
         
+        next?.notify( result )
         
     }
-}
-
-
-func square(a: Int, oncompletion: (Result<Int>)-> Void ) {
-    oncompletion( .success(a * a) )
 }
 
 func ~> <T> (first: T, f: (T, (Result<T>)->Void) -> Void ) -> Future<T> {
     
     let future = Future<T>()
     
-    queue.async() {
-        
-        f(first) {
-            future.resolve($0)
-        }
-    }
+    future.f = f
+    
+    future.notify(.success(first))
     
     return future
 
 }
 
-func ~> <T> (first: Future<T>, f: (T, (T)->Void) -> Void) -> Future<T> {
+func ~> <T> (first: Future<T>, f: (T, (Result<T>)->Void) -> Void) -> Future<T> {
     
-    let future = Future<T>()
-    
-//    queue.async() {
-//        
-//        f(first.result!) {
-//            future.resolve($0)
-//            
-//        }
-//    }
-    
-    return Future()
+    return first.then(f: f)
     
 }
 
